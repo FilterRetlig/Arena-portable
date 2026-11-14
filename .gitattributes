@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Keep Windows batch scripts with literal CRLF even in GitHub ZIP downloads
+*.bat -text
+*.sh text eol=lf
