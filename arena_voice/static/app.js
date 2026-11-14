@@ -64,8 +64,6 @@
     chatModeTabs: document.getElementById("chatModeTabs"),
     bridgeStatus: document.getElementById("bridgeStatus"),
     bridgeStatusText: document.getElementById("bridgeStatusText"),
-    copyUrlBtn: document.getElementById("copyUrlBtn"),
-    openTabBtn: document.getElementById("openTabBtn"),
     ttsEngineToggle: document.getElementById("ttsEngineToggle"),
     ttsEngineLabel: document.getElementById("ttsEngineLabel"),
     autoplayBtn: document.getElementById("autoplayBtn"),
@@ -1034,33 +1032,6 @@
     });
 
     els.statusBannerClose.addEventListener("click", hideBanner);
-
-    if (els.openTabBtn) {
-      els.openTabBtn.href = window.location.href;
-      if (window.self === window.top) {
-        els.openTabBtn.hidden = true;
-      }
-    }
-
-    if (els.copyUrlBtn) {
-      els.copyUrlBtn.addEventListener("click", async () => {
-        const url = window.location.href;
-        let copied = false;
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          try {
-            await navigator.clipboard.writeText(url);
-            copied = true;
-          } catch {
-            copied = false;
-          }
-        }
-        if (copied) {
-          showBanner(`Ссылка скопирована: ${url} — попробуй открыть её в отдельной вкладке Chrome/Edge.`);
-        } else {
-          showBanner(`Адрес мини-сайта: ${url} — выдели и открой в новой вкладке Chrome/Edge.`);
-        }
-      });
-    }
   }
 
   async function init() {
