@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Arena Voice — Русский голосовой чат</title>
-  <link rel="stylesheet" href="/static/styles.css?v=20261114b" />
+  <link rel="stylesheet" href="/static/styles.css?v=20261114c" />
 </head>
 <body>
   <div class="app-shell">
@@ -61,8 +61,16 @@
           Автономный чат (API / Демо)
         </button>
       </div>
-      <div class="bridge-status" id="bridgeStatus">
-        <span id="bridgeStatusText">● Синхронизация каждые 2 сек</span>
+      <div class="mode-right">
+        <div class="bridge-status" id="bridgeStatus">
+          <span id="bridgeStatusText">● Синхронизация каждые 2 сек</span>
+        </div>
+        <button class="mini-link-btn" id="copyUrlBtn" type="button" title="Скопировать прямой адрес этого мини-сайта">
+          🔗 Ссылка
+        </button>
+        <a class="mini-link-btn" id="openTabBtn" href="/" target="_blank" rel="noopener noreferrer" title="Открыть этот же сайт в новой вкладке">
+          ↗ Отдельный сайт
+        </a>
       </div>
     </div>
 
@@ -209,6 +217,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=20261114b"></script>
+  <script src="/static/app.js?v=20261114c"></script>
 </body>
 </html>

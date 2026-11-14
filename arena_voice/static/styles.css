@@ -277,6 +277,33 @@ html, body {
   border-color: rgba(251, 191, 36, 0.3);
 }
 
+.mode-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mini-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  font-size: 0.77rem;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.mini-link-btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
 .status-banner {
   display: flex;
   align-items: center;
