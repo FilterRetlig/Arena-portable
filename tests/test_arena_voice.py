@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
+from arena_voice.bridge import append_assistant_reply, get_pending_user_messages
 from arena_voice.chat import clean_for_speech, generate_reply
 from arena_voice.server import app
 from arena_voice.stt import STTResult
@@ -132,3 +133,47 @@ def test_stt_endpoint_mocked_and_unconfigured() -> None:
     )
     assert unconf_resp.status_code == 503
     assert "Whisper" in unconf_resp.json()["detail"]
+
+
+def test_bridge_lifecycle_and_audio_security(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("ARENA_VOICE_BRIDGE_DIR", str(tmp_path))
+
+    init_resp = client.get("/api/bridge/messages")
+    assert init_resp.status_code == 200
+    init_data = init_resp.json()
+    assert init_data["pending_count"] == 0
+    assert init_data["messages"][0]["id"] == "bridge-welcome"
+
+    send_resp = client.post("/api/bridge/send", json={"text": "Привет из предпросмотра!"})
+    assert send_resp.status_code == 200
+    send_data = send_resp.json()
+    assert send_data["pending_count"] == 1
+    assert send_data["messages"][-1]["status"] == "pending"
+
+    pending = get_pending_user_messages()
+    assert len(pending) == 1
+    assert pending[0]["text"] == "Привет из предпросмотра!"
+
+    audio_dir = tmp_path / "audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    (audio_dir / "reply_01.mp3").write_bytes(b"ID3bridge-mp3")
+
+    append_assistant_reply("Ответ с моста!", audio_filename="reply_01.mp3")
+    after_resp = client.get("/api/bridge/messages")
+    assert after_resp.status_code == 200
+    after_data = after_resp.json()
+    assert after_data["pending_count"] == 0
+    assert after_data["messages"][-1]["audio_url"] == "/api/bridge/audio/reply_01.mp3"
+    assert after_data["messages"][-2]["status"] == "answered"
+
+    audio_resp = client.get("/api/bridge/audio/reply_01.mp3")
+    assert audio_resp.status_code == 200
+    assert audio_resp.content == b"ID3bridge-mp3"
+
+    bad_resp = client.get("/api/bridge/audio/bad.txt")
+    assert bad_resp.status_code == 400
+
+    clear_resp = client.post("/api/bridge/clear")
+    assert clear_resp.status_code == 200
+    assert len(clear_resp.json()["messages"]) == 1
+

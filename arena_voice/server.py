@@ -3,20 +3,28 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from arena_voice.bridge import (
+    append_user_message,
+    clear_bridge_state,
+    get_bridge_audio_dir,
+    load_bridge_state,
+)
 from arena_voice.chat import generate_reply
 from arena_voice.config import DEFAULT_VOICE, PERSONAS, RUSSIAN_VOICES, get_env_llm_defaults
 from arena_voice.stt import STTUnavailableError, transcribe_audio_bytes
 from arena_voice.tts import synthesize_speech_bytes
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+_SAFE_AUDIO_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+\.(mp3|wav|ogg|m4a)$")
 
 app = FastAPI(
     title="Arena Voice Studio",
@@ -50,6 +58,10 @@ class TTSRequestIn(BaseModel):
     voice: str = DEFAULT_VOICE
     rate_pct: int = 0
     pitch_hz: int = 0
+
+
+class BridgeMessageIn(BaseModel):
+    text: str = Field(min_length=1)
 
 
 @app.get("/", include_in_schema=False)
@@ -155,6 +167,87 @@ async def api_stt(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return {"text": result.text, "provider": result.provider}
+
+
+@app.get("/api/bridge/messages")
+async def api_bridge_messages() -> JSONResponse:
+    state = load_bridge_state()
+    pending_count = sum(
+        1 for m in state["messages"]
+        if m.get("role") == "user" and m.get("status") == "pending"
+    )
+    return JSONResponse(
+        content={
+            "version": state.get("version", 1),
+            "updated_at": state.get("updated_at"),
+            "pending_count": pending_count,
+            "messages": state["messages"],
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.post("/api/bridge/send")
+async def api_bridge_send(req: BridgeMessageIn) -> JSONResponse:
+    try:
+        state = append_user_message(req.text)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    pending_count = sum(
+        1 for m in state["messages"]
+        if m.get("role") == "user" and m.get("status") == "pending"
+    )
+    return JSONResponse(
+        content={
+            "version": state.get("version", 1),
+            "updated_at": state.get("updated_at"),
+            "pending_count": pending_count,
+            "messages": state["messages"],
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.post("/api/bridge/clear")
+async def api_bridge_clear() -> JSONResponse:
+    state = clear_bridge_state()
+    return JSONResponse(
+        content={
+            "version": state.get("version", 1),
+            "updated_at": state.get("updated_at"),
+            "pending_count": 0,
+            "messages": state["messages"],
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/api/bridge/audio/{filename}")
+async def api_bridge_audio(filename: str) -> FileResponse:
+    if not _SAFE_AUDIO_NAME_RE.fullmatch(filename):
+        raise HTTPException(status_code=400, detail="Недопустимое имя аудиофайла.")
+
+    audio_dir = get_bridge_audio_dir().resolve()
+    target = (audio_dir / filename).resolve()
+    if target.parent != audio_dir:
+        raise HTTPException(status_code=400, detail="Недопустимый путь.")
+
+    if not target.exists():
+        if filename == "bridge_welcome.mp3":
+            fallback = STATIC_DIR / "clips" / "welcome.mp3"
+            if fallback.exists():
+                return FileResponse(fallback, media_type="audio/mpeg", headers={"Cache-Control": "no-store"})
+        raise HTTPException(status_code=404, detail="Аудиофайл не найден.")
+
+    media_types = {
+        ".mp3": "audio/mpeg",
+        ".wav": "audio/wav",
+        ".ogg": "audio/ogg",
+        ".m4a": "audio/mp4",
+    }
+    media_type = media_types.get(target.suffix.lower(), "application/octet-stream")
+    return FileResponse(target, media_type=media_type, headers={"Cache-Control": "no-store"})
 
 
 def run() -> None:

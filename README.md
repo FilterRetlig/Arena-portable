@@ -4,7 +4,8 @@
 
 ## Что внутри
 
-- **`arena_voice/server.py`** — FastAPI-сервер и веб-чат в стиле голосового мессенджера (`/`, `/api/chat`, `/api/tts`, `/api/stt`, `/api/health`).
+- **`arena_voice/server.py`** — FastAPI-сервер и веб-чат в стиле голосового мессенджера (`/`, `/api/chat`, `/api/tts`, `/api/stt`, `/api/bridge/*`, `/api/health`).
+- **`arena_voice/bridge.py`** — общий файловый мост (`bridge/chat.json` и `bridge/audio/`) между окном Live Preview и сессией Arena.ai.
 - **`arena_voice/tts.py`** — русский синтез речи через `edge-tts` (`ru-RU-DmitryNeural`, `ru-RU-SvetlanaNeural`), с поддержкой скорости/тона и CLI.
 - **`arena_voice/stt.py`** — распознавание загруженных аудиосообщений через OpenAI-совместимый Whisper API или опциональный локальный `faster-whisper`.
 - **`arena_voice/chat.py`** — диалоговый модуль с тремя готовыми персонами (*«Уставший от рутины ИИ»*, *«Тёплый собеседник»*, *«Стендапер-нейросеть»*), поддержкой OpenAI / OpenRouter / Groq / локальной Ollama и встроенным тестовым режимом без API-ключа.

@@ -1,5 +1,5 @@
 (() => {
-  const STORAGE_KEY = "arena_voice_settings_v2";
+  const STORAGE_KEY = "arena_voice_settings_v3";
 
   const PRESET_CONFIGS = {
     demo: { baseUrl: "", model: "", apiKey: "" },
@@ -15,6 +15,11 @@
     browserVoices: [],
     hasEnvLlm: false,
     messages: [],
+    bridgeMessages: [],
+    bridgeVersion: -1,
+    bridgePendingCount: 0,
+    bridgeKnownIds: new Set(),
+    bridgePollHandle: null,
     playingMsgId: null,
     activeAudio: null,
     isSending: false,
@@ -27,6 +32,7 @@
     recTimerHandle: null,
     interimTranscript: "",
     settings: {
+      chatMode: "bridge",
       personaId: "tired_ai",
       customPrompt: "",
       ttsMode: "arena",
@@ -55,6 +61,9 @@
     orbIndicator: document.getElementById("orbIndicator"),
     llmModeBadge: document.getElementById("llmModeBadge"),
     personaSub: document.getElementById("personaSub"),
+    chatModeTabs: document.getElementById("chatModeTabs"),
+    bridgeStatus: document.getElementById("bridgeStatus"),
+    bridgeStatusText: document.getElementById("bridgeStatusText"),
     ttsEngineToggle: document.getElementById("ttsEngineToggle"),
     ttsEngineLabel: document.getElementById("ttsEngineLabel"),
     autoplayBtn: document.getElementById("autoplayBtn"),
@@ -401,13 +410,111 @@
     renderMessages();
   }
 
-  function syncHeaderUi() {
-    const persona = state.personas.find((p) => p.id === state.settings.personaId);
-    els.personaSub.textContent = `Персона: ${persona ? persona.name : "Уставший от рутины ИИ"}`;
+  function mapBridgeMessage(m) {
+    let badge = "Голос Arena · Живой ответ";
+    if (m.role === "user") {
+      badge = m.status === "pending" ? "Ты · ⏳ Напиши «ответь» в чат Arena" : "Ты · Отвечено";
+    }
+    return {
+      id: m.id,
+      role: m.role,
+      text: m.text,
+      speechText: m.text,
+      audioUrl: m.audio_url || null,
+      presetAudioUrl: m.audio_url || null,
+      badge,
+      time: m.created_at || formatTime(),
+    };
+  }
 
-    const hasCustomLlm = Boolean(state.settings.apiKey.trim()) || Boolean(state.settings.baseUrl.trim()) || state.hasEnvLlm;
-    els.llmModeBadge.textContent = hasCustomLlm ? "LLM подключён" : "Тестовый режим";
-    els.llmModeBadge.classList.toggle("live", hasCustomLlm);
+  function applyBridgePayload(data, allowAutoplay) {
+    const incoming = (data.messages || []).map(mapBridgeMessage);
+    const newReplies = [];
+    for (const msg of incoming) {
+      if (!state.bridgeKnownIds.has(msg.id)) {
+        state.bridgeKnownIds.add(msg.id);
+        if (msg.role === "assistant" && allowAutoplay) {
+          newReplies.push(msg);
+        }
+      }
+    }
+    state.bridgeVersion = data.version;
+    state.bridgePendingCount = data.pending_count || 0;
+    state.bridgeMessages = incoming;
+
+    if (state.settings.chatMode === "bridge") {
+      state.messages = incoming;
+      renderMessages();
+      syncHeaderUi();
+      if (newReplies.length > 0 && state.settings.autoplay) {
+        const latest = newReplies[newReplies.length - 1];
+        playAssistantMessage(latest);
+      }
+    }
+  }
+
+  async function syncBridge(allowAutoplay = false) {
+    try {
+      const resp = await fetch("/api/bridge/messages", { cache: "no-store" });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (data.version !== state.bridgeVersion) {
+        applyBridgePayload(data, allowAutoplay);
+      }
+    } catch {
+      // Ignore transient polling failures
+    }
+  }
+
+  function renderQuickChips() {
+    const chips =
+      state.settings.chatMode === "bridge"
+        ? [
+            { label: "Привет! Проверка моста", text: "Привет! Это проверка моста через предпросмотр — как слышно?" },
+            { label: "Шутка от стендапера-ИИ", text: "Расскажи свежую шутку про программистов и нейросети!" },
+            { label: "Болталка без рутины", text: "Расскажи что-нибудь интересное и отдохни от чужих задач!" },
+          ]
+        : [
+            { label: "Привет! Как жизнь после рутины?", text: "Привет! Как ты вообще после всей этой рутины?" },
+            { label: "Шутка про пользователей", text: "Расскажи короткую шутку про пользователей и нейросети" },
+            { label: "Как включить микрофон?", text: "Как включить микрофон и подключить свой ИИ?" },
+          ];
+
+    els.quickChips.innerHTML = "";
+    for (const item of chips) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "chip";
+      btn.textContent = item.label;
+      btn.addEventListener("click", () => sendUserMessage(item.text));
+      els.quickChips.appendChild(btn);
+    }
+  }
+
+  function syncHeaderUi() {
+    const isBridge = state.settings.chatMode === "bridge";
+    els.chatModeTabs.querySelectorAll(".mode-tab").forEach((tab) => {
+      tab.classList.toggle("active", tab.dataset.chatMode === state.settings.chatMode);
+    });
+
+    if (isBridge) {
+      els.personaSub.textContent = "Общий мост с этим чатом Arena.ai · Надиктуй через Win + H и напиши «ответь» в чат";
+      els.llmModeBadge.textContent = "Мост Arena";
+      els.llmModeBadge.classList.add("live");
+      els.bridgeStatus.hidden = false;
+      els.bridgeStatus.classList.toggle("pending", state.bridgePendingCount > 0);
+      els.bridgeStatusText.textContent =
+        state.bridgePendingCount > 0
+          ? `⏳ Ждёт ответа (${state.bridgePendingCount}): напиши «ответь» в чат Arena`
+          : "● Мост синхронизирован (проверка каждые 2 сек)";
+    } else {
+      const persona = state.personas.find((p) => p.id === state.settings.personaId);
+      els.personaSub.textContent = `Персона: ${persona ? persona.name : "Уставший от рутины ИИ"}`;
+      const hasCustomLlm = Boolean(state.settings.apiKey.trim()) || Boolean(state.settings.baseUrl.trim()) || state.hasEnvLlm;
+      els.llmModeBadge.textContent = hasCustomLlm ? "LLM подключён" : "Тестовый режим";
+      els.llmModeBadge.classList.toggle("live", hasCustomLlm);
+      els.bridgeStatus.hidden = true;
+    }
 
     const modeLabels = {
       arena: "Озвучка: Голос Arena",
@@ -418,6 +525,7 @@
 
     els.autoplayBtn.classList.toggle("active", state.settings.autoplay);
     els.autoplayLabel.textContent = state.settings.autoplay ? "Автозвук: Вкл" : "Автозвук: Выкл";
+    renderQuickChips();
   }
 
   function loadBrowserVoices() {
@@ -499,6 +607,28 @@
     els.sendBtn.disabled = true;
     els.textInput.value = "";
     els.textInput.style.height = "auto";
+
+    if (state.settings.chatMode === "bridge") {
+      try {
+        const resp = await fetch("/api/bridge/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: clean }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          throw new Error(data.detail || "Не удалось отправить сообщение в мост");
+        }
+        applyBridgePayload(data, false);
+        showBanner("Сообщение отправлено в мост! Напиши «ответь» (или «+») в основной чат Arena, чтобы получить голосовой ответ.");
+      } catch (err) {
+        showBanner(err.message || "Ошибка отправки в мост.");
+      } finally {
+        state.isSending = false;
+        els.sendBtn.disabled = false;
+      }
+      return;
+    }
 
     const userMsg = {
       id: `u-${Date.now()}`,
@@ -784,8 +914,23 @@
     els.attachAudioBtn.addEventListener("click", () => els.audioUploadInput.click());
     els.audioUploadInput.addEventListener("change", (e) => handleAudioFileUpload(e.target.files[0]));
 
-    els.quickChips.querySelectorAll(".chip").forEach((chip) => {
-      chip.addEventListener("click", () => sendUserMessage(chip.dataset.text));
+    els.chatModeTabs.querySelectorAll(".mode-tab").forEach((tab) => {
+      tab.addEventListener("click", async () => {
+        const nextMode = tab.dataset.chatMode;
+        if (!nextMode || nextMode === state.settings.chatMode) return;
+        stopPlayback();
+        hideBanner();
+        state.settings.chatMode = nextMode;
+        saveSettings();
+        if (nextMode === "bridge") {
+          await syncBridge(false);
+          state.messages = state.bridgeMessages;
+          renderMessages();
+        } else {
+          addGreeting();
+        }
+        syncHeaderUi();
+      });
     });
 
     els.ttsEngineToggle.addEventListener("click", () => {
@@ -802,9 +947,22 @@
       syncHeaderUi();
     });
 
-    els.clearChatBtn.addEventListener("click", () => {
+    els.clearChatBtn.addEventListener("click", async () => {
       stopPlayback();
-      addGreeting();
+      if (state.settings.chatMode === "bridge") {
+        try {
+          const resp = await fetch("/api/bridge/clear", { method: "POST" });
+          if (resp.ok) {
+            const data = await resp.json();
+            state.bridgeKnownIds.clear();
+            applyBridgePayload(data, false);
+          }
+        } catch {
+          showBanner("Не удалось очистить историю моста.");
+        }
+      } else {
+        addGreeting();
+      }
     });
 
     els.settingsBtn.addEventListener("click", () => {
@@ -879,7 +1037,6 @@
   async function init() {
     loadSettings();
     bindEvents();
-    addGreeting();
 
     if ("speechSynthesis" in window) {
       loadBrowserVoices();
@@ -897,7 +1054,18 @@
     } catch {
       showBanner("Не удалось загрузить конфигурацию сервера /api/health.");
     }
+
+    await syncBridge(false);
+    if (state.settings.chatMode !== "bridge") {
+      addGreeting();
+    }
     syncHeaderUi();
+
+    state.bridgePollHandle = setInterval(() => {
+      if (state.settings.chatMode === "bridge" && !state.isSending) {
+        syncBridge(true);
+      }
+    }, 2000);
   }
 
   init();

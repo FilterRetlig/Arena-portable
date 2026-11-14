@@ -51,6 +51,21 @@
       </div>
     </header>
 
+    <div class="mode-bar">
+      <div class="mode-tabs" id="chatModeTabs">
+        <button class="mode-tab active" type="button" data-chat-mode="bridge">
+          <span class="mode-dot"></span>
+          Мост с Arena (общий чат)
+        </button>
+        <button class="mode-tab" type="button" data-chat-mode="standalone">
+          Автономный чат (API / Демо)
+        </button>
+      </div>
+      <div class="bridge-status" id="bridgeStatus">
+        <span id="bridgeStatusText">● Синхронизация каждые 2 сек</span>
+      </div>
+    </div>
+
     <div class="status-banner" id="statusBanner" hidden>
       <span id="statusBannerText"></span>
       <button type="button" id="statusBannerClose" aria-label="Закрыть">&times;</button>
